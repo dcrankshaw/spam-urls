@@ -1,0 +1,9 @@
+*.tar.gz
+*.so
+*.o
+*.so.2
+*.model
+*output
+*.pyc
+*.exe
+liblinear-1.96/windows
