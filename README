@@ -1,2 +1,4 @@
 Attempt to replicate and improve on some of the malicious url detection results
 found in Ma et al.'s project http://sysnet.ucsd.edu/projects/url/
+
+Data can be downloaded from: http://sysnet.ucsd.edu/projects/url/url_svmlight.tar.gz
