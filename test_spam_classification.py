@@ -2,13 +2,18 @@
 
 import os
 import sys
-sys.path.append(os.path.abspath("/home/ubuntu/liblinear-1.96/python"))
+# sys.path.append(os.path.abspath("/home/ubuntu/liblinear-1.96/python"))
+aws=False
+if aws:
+	sys.path.append(os.path.abspath("/home/ubuntu/liblinear-1.96/python"))
+	base_path = "/home/ubuntu/url_svmlight"
+else:
+	sys.path.append(os.path.abspath("/Users/crankshaw/code/amplab/model-serving/spam-urls/liblinear-1.96/python"))
+	base_path = "/Users/crankshaw/code/amplab/model-serving/data/spam-urls/url_svmlight"
 import liblinearutil as ll
 import pprint
 import csv
 
-# base_path = "/Users/crankshaw/code/amplab/model-serving/data/spam-urls/url_svmlight"
-base_path = "/home/ubuntu/url_svmlight"
 cost = 100
 model = 0
 
