@@ -113,8 +113,9 @@ def main():
 	    if y != pred:
 		num_wrong += 1
 	    current_mu, current_sigma = update_rule(x, y, current_mu, current_sigma, i)
-	    if total % 500 == 0:
-		print "Processed %d examples" % total
+	    if total % 10 == 0:
+		# print "Processed %d examples" % total
+		print "Total: %d, wrong: %d" % (total, num_wrong)
 	
 	# print current_mu
 
