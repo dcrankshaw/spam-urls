@@ -8,10 +8,18 @@ from scipy.stats import norm
 # from sklearn import datasets
 # import scipy.sparse as sp
 import warnings
+import pprint
+import csv
 # warnings.filterwarnings("error")
 
-
-base_path = "/Users/crankshaw/code/amplab/model-serving/data/spam-urls/url_svmlight"
+aws = True
+if aws:
+	# sys.path.append(os.path.abspath("/home/ubuntu/liblinear-1.96/python"))
+	base_path = "/home/ubuntu/url_svmlight"
+else:
+	# sys.path.append(os.path.abspath("/Users/crankshaw/code/amplab/model-serving/spam-urls/liblinear-1.96/python"))
+	base_path = "/Users/crankshaw/code/amplab/model-serving/data/spam-urls/url_svmlight"
+# base_path = "/Users/crankshaw/code/amplab/model-serving/data/spam-urls/url_svmlight"
 a_const = 1.0
 eta_const = 0.9
 phi_const = norm.ppf(eta_const)
@@ -75,20 +83,6 @@ def diag_sigma_update(sigma_i, alpha_i, phi_const, u_i, x_i):
     new_sigma_inv = la.sd_sum(x_squared, sigma_inv)
     return la.dense_unary_op(new_sigma_inv, lambda x: 1.0 / x)
 
-    # x_nonzeros = sp.find(x_i)
-    # x_squared = sp.coo_matrix((x_nonzeros[2]**2, (x_nonzeros[0], x_nonzeros[0])), shape=sigma_i.shape).todia()
-    # sig_inv = diag_inverse(sigma_i)
-    # new_sig_inv = sig_inv + alpha_i * phi_const*(1.0/np.sqrt(u_i))*x_squared
-    # return diag_inverse(new_sig_inv)
-
-# def diag_inverse(m):
-#     m.data = 1.0 / m.data
-#     return m
-#     # d = sp.find(m)
-#     # new_vals = 1.0 / d[2]
-#     # return sp.coo_matrix((new_vals, (d[0], d[1])), shape=m.shape).todia()
-
-
 def load_days(start, end):
     paths = []
     for day in range(start, end):
@@ -96,57 +90,84 @@ def load_days(start, end):
 	paths.append(path)
     return la.read_svmlight(paths)
 
+def load_day(day):
+    path = "%s/Day%d.svm" % (base_path, day)
+    return la.read_svmlight([path])
 
-def main():
+
+def init_model():
     xs, ys, max_dim = load_days(0, 1)
     mu = np.zeros(max_dim)
     sigma = np.ones(max_dim)
+    for i in range(len(ys)):
+	mu, sigma = update(xs[i], ys[i], mu, sigma, 0)
+    print "Model initialized"
+    return mu, sigma
+
+def process_day(day, mu, sigma):
     num_false_pos = 0
     num_false_neg = 0
-    num_wrong = 0
-    total = 0
-    num_examples = len(ys)
-    mu, sigma = update(xs[0], ys[0], mu, sigma, 0)
-    for i in range(1, num_examples):
+    xs, ys, max_dim = load_day(day)
+    total = len(ys)
+    # extend arrays to account for new features
+    if max_dim > len(mu):
+	app0 = np.zeros(max_dim - len(mu))
+	app1 = np.ones(max_dim - len(sigma))
+	mu = np.append(mu, app0)
+	sigma = np.append(sigma, app1)
+    
+    for i in range(len(ys)):
 	x = xs[i]
 	y = ys[i]
 	pred = make_prediction(x, mu)
 	diff = y - pred
 	total += 1
-	if diff != 0:
-	    num_wrong += 1
 	if diff == -2:
 		num_false_pos += 1
 	if diff == 2:
 		num_false_neg += 1
-
 	mu, sigma = update(x, y, mu, sigma, i)
-	if i % 500 == 0:
-	    print "Processed %d" % i
+	if i % 1000 == 0:
+	    print "Processed %d on day %d" % (i, day)
+    return (mu, sigma, num_false_pos, num_false_neg, total)
 
 
-    # for d in all_days:
-	# for i in range(len(d[1])):
-	#     # x = d[0][i].toarray()[0] # have to extract 1st row because it makes a 2d array
-	#     x = d[0][i].transpose()
-	#     y = d[1][i]
-	#     pred = make_prediction(x, mu)
-	#     total += 1
-	#     if y != pred:
-	# 	num_wrong += 1
-	#     mu, current_sigma = update_rule(x, y, mu, current_sigma, i)
-	#     if total % 10 == 0:
-	# 	# print "Processed %d examples" % total
-	# 	print "Total: %d, wrong: %d" % (total, num_wrong)
-	# 	break
-	#
-	# # print mu
-
-    print "Num wrong: %d" % num_wrong
-    print "FP: %d, FN: %d, combined: %d" % (num_false_pos, num_false_neg, num_false_pos + num_false_neg)
-    print "Total: %d" % total
 
 
+def main():
+    results = []
+    error_rates = []
+    cum_total = 0
+    cum_false_pos = 0
+    cum_false_neg = 0
+    mu, sigma = init_model()
+
+    for day in range(1, 30):
+	mu, sigma, fp, fn, total = process_day(day, mu, sigma)
+	cum_total += total
+	cum_false_pos += fp
+	cum_false_neg += fn
+	results.append((day, cum_total, cum_false_pos, cum_false_neg))
+	error_rates.append((day,
+			    100.0*(cum_false_pos + cum_false_neg)/float(cum_total),
+			    100.0*cum_false_pos/float(cum_total),
+			    100.0*cum_false_neg/float(cum_total)))
+
+	print "%d: %f%%, %f%%, %f%%" % (day,
+				  100.0*(cum_false_pos + cum_false_neg)/float(cum_total),
+				  100.0*cum_false_pos/float(cum_total), 
+				  100.0*cum_false_neg/float(cum_total))
+
+	
+	
+    with open("results/online_retrain_daily_results.csv", "wb") as out:
+	file_writer = csv.writer(out)
+	file_writer.writerow(['day', 'total_err', 'false_pos', 'false_neg'])
+	for row in error_rates:
+	    file_writer.writerow(row)
+
+    pp = pprint.PrettyPrinter(indent=4)
+    pp.pprint(results)
 
 
 

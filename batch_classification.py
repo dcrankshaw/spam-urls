@@ -3,7 +3,7 @@
 import os
 import sys
 # sys.path.append(os.path.abspath("/home/ubuntu/liblinear-1.96/python"))
-aws=False
+aws=True
 if aws:
 	sys.path.append(os.path.abspath("/home/ubuntu/liblinear-1.96/python"))
 	base_path = "/home/ubuntu/url_svmlight"
@@ -16,6 +16,7 @@ import csv
 
 cost = 100
 model = 0
+batch = 1000
 
 # -s type : set type of solver (default 1)
 #   for multi-class classification
@@ -49,18 +50,24 @@ def read_multiple_days(start_day, end_day):
 	# print "loaded data from days %d to %d" % (start_day, end_day)
 	return (all_y, all_x)
 
-def train_svm(start_day, end_day):
-	all_y, all_x = read_multiple_days(start_day, end_day)
+def load_day(day):
+	path = "%s/Day%d.svm" % (base_path, day)
+	(y, x) = ll.svm_read_problem(path)
+	return (y, x)
+	
+
+def train_svm(all_y, all_x):
+	# all_y, all_x = read_multiple_days(start_day, end_day)
 	model = ll.train(all_y, all_x, "-c %d -s 0 -q" % cost)
 	return model
 
-def predict_with_svm(model, start_day, end_day):
-	all_y, all_x = read_multiple_days(start_day, end_day)
-	labels, acc, values = ll.predict(all_y, all_x, model)
+def predict_with_svm(model, predict_y, predict_x):
+	# all_y, all_x = read_multiple_days(start_day, end_day)
+	labels, acc, values = ll.predict(predict_y, predict_x, model, "-q")
 	num_false_pos = 0
 	num_false_neg = 0
-	total = len(all_y)
-	for gt, pred in zip(all_y, labels):
+	total = len(predict_y)
+	for gt, pred in zip(predict_y, labels):
 		diff = gt - pred
 		if diff == -2:
 			num_false_pos += 1
@@ -77,25 +84,35 @@ if __name__ == "__main__":
 	cum_total = 0
 	cum_false_pos = 0
 	cum_false_neg = 0
-	for end in range(20, 50):
-		model = train_svm(0, end)
-		t, fp, fn = predict_with_svm(model, end + 1, end + 2)
-		cum_total += t
-		cum_false_pos += fp
-		cum_false_neg += fn
-		results.append((end, cum_total, cum_false_pos, cum_false_neg))
-		error_rates.append((end,
+
+	first_predict_day = 1
+	last_predict_day = 30
+	all_y, all_x = load_day(0)
+	for day in range(first_predict_day, last_predict_day + 1):
+		predict_y, predict_x = load_day(day)
+		while len(predict_y) > 0:
+			model = train_svm(all_y, all_x)
+			t, fp, fn = predict_with_svm(model, predict_y[:batch], predict_x[:batch])
+			cum_total += t
+			cum_false_pos += fp
+			cum_false_neg += fn
+			all_y.extend(predict_y[:batch])
+			all_x.extend(predict_x[:batch])
+			predict_y = predict_y[batch:]
+			predict_x = predict_x[batch:]
+		results.append((day, cum_total, cum_false_pos, cum_false_neg))
+		error_rates.append((day,
 				    100.0*(cum_false_pos + cum_false_neg)/float(cum_total),
 				    100.0*cum_false_pos/float(cum_total),
 				    100.0*cum_false_neg/float(cum_total)))
 
-		print "%d: %f%%, %f%%, %f%%" % (end,
+		print "%d: %f%%, %f%%, %f%%" % (day,
 					  100.0*(cum_false_pos + cum_false_neg)/float(cum_total),
 					  100.0*cum_false_pos/float(cum_total), 
 					  100.0*cum_false_neg/float(cum_total))
 	pp = pprint.PrettyPrinter(indent=4)
 	pp.pprint(results)
-	with open("retrain_daily_results.csv", "wb") as out:
+	with open("results/batch_retrain_bs_%d_results.csv" % batch, "wb") as out:
 		file_writer = csv.writer(out)
 		file_writer.writerow(['day', 'total_err', 'false_pos', 'false_neg'])
 		for row in error_rates:
